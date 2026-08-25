@@ -14,7 +14,7 @@ def client():
 def test_home_endpoint(client):
     response = client.get("/")
 
-    assert response.status_code == 500
+    assert response.status_code == 200
 
     assert response.get_json() == {
         "application": "Python AWS Automation Demo",
@@ -26,7 +26,7 @@ def test_home_endpoint(client):
 def test_health_endpoint(client):
     response = client.get("/health")
 
-    assert response.status_code == 500
+    assert response.status_code == 200
 
     assert response.get_json() == {
         "status": "healthy"
@@ -38,7 +38,7 @@ def test_data_endpoint(client):
 
     payload = response.get_json()
 
-    assert response.status_code == 500
+    assert response.status_code == 200
 
     assert len(payload["data"]) == 4
 
