@@ -1,0 +1,118 @@
+name: Deploy Python Application
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # -----------------------------
+      # Checkout code
+      # -----------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # -----------------------------
+      # Setup Python
+      # -----------------------------
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+
+      # -----------------------------
+      # Install Boto3
+      # -----------------------------
+
+      - name: Install automation dependencies
+        run: |
+          pip install -r automation/requirements.txt
+
+
+      # -----------------------------
+      # Configure AWS
+      # -----------------------------
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+
+      # -----------------------------
+      # Create infrastructure
+      # -----------------------------
+
+      - name: Setup AWS infrastructure
+        run: |
+          python automation/infrastructure.py setup
+
+
+      # -----------------------------
+      # Get EC2 public IP
+      # -----------------------------
+
+      - name: Get EC2 IP
+        id: ec2
+        run: |
+          IP=$(python automation/infrastructure.py ip)
+
+          echo "EC2 IP: $IP"
+
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+
+
+      # -----------------------------
+      # Deploy application
+      # -----------------------------
+
+      - name: Deploy application to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ steps.ec2.outputs.ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+
+          script: |
+
+            cd /home/ubuntu
+
+            if [ ! -d "python-aws-automation" ]; then
+
+              git clone \
+              https://github.com/${{ github.repository }}.git
+
+            fi
+
+            cd python-aws-automation
+
+            git pull origin main
+
+            docker stop python-app || true
+
+            docker rm python-app || true
+
+            docker build \
+              -t python-automation-app \
+              ./app
+
+            mkdir -p /home/ubuntu/python-aws-automation/app/logs
+
+            docker run -d \
+              --name python-app \
+              -p 5000:5000 \
+              -v /home/ubuntu/python-aws-automation/app/logs:/app/logs \
+              python-automation-app
+
+            echo "Application deployed successfully"

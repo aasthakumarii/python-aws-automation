@@ -486,7 +486,38 @@ def status():
     except iam.exceptions.NoSuchEntityException:
         print("Not found")
 
+# ============================================================
+# GET IP
+# ============================================================
 
+def get_ec2_ip():
+
+    response = ec2.describe_instances(
+        Filters=[
+            {
+                "Name": "tag:Project",
+                "Values": [PROJECT_NAME]
+            },
+            {
+                "Name": "instance-state-name",
+                "Values": [
+                    "pending",
+                    "running"
+                ]
+            }
+        ]
+    )
+
+    for reservation in response["Reservations"]:
+        for instance in reservation["Instances"]:
+
+            ip = instance.get("PublicIpAddress")
+
+            if ip:
+                print(ip)
+                return
+
+    print("EC2 public IP not found.")
 # ============================================================
 # DESTROY
 # ============================================================
@@ -669,6 +700,9 @@ Usage:
 
     elif command == "status":
         status()
+        
+    elif command == "ip":
+        get_ec2_ip()
 
     elif command == "destroy":
         destroy()
