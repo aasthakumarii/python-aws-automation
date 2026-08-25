@@ -277,6 +277,14 @@ def create_security_group():
                 "IpRanges": [
                     {"CidrIp": "0.0.0.0/0"}
                 ]
+            },
+            {
+                "IpProtocol": "tcp",
+                "FromPort": 80,
+                "ToPort": 80,
+                "IpRanges": [
+                    {"CidrIp": "0.0.0.0/0"}
+                ]
             }
         ]
     )
@@ -700,7 +708,7 @@ Usage:
 
     elif command == "status":
         status()
-        
+
     elif command == "ip":
         get_ec2_ip()
 
