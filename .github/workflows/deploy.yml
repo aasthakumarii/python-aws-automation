@@ -111,16 +111,16 @@ jobs:
 
             git pull origin main
 
-            docker stop python-app || true
-            docker rm python-app || true
+            sudo docker stop python-app || true
+            sudo docker rm python-app || true
 
-            docker build \
+            sudo docker build \
               -t python-automation-app \
               ./app
 
             mkdir -p /home/ubuntu/python-aws-automation/app/logs
 
-            docker run -d \
+            sudo docker run -d \
               --name python-app \
               -p 5000:5000 \
               -v /home/ubuntu/python-aws-automation/app/logs:/app/logs \
@@ -131,13 +131,13 @@ jobs:
 
             (crontab -l 2>/dev/null | grep -v "upload_logs.py"; \
             echo "30 4 * * * cd /home/ubuntu/python-aws-automation && /usr/bin/python3 automation/upload_logs.py >> /home/ubuntu/python-aws-automation/app/logs/upload.log 2>&1") | crontab -
-                
+
             echo "Cron configured:"
             crontab -l
 
             sleep 5
 
-            docker ps
+            sudo docker ps
 
             curl http://localhost:5000/health
 
