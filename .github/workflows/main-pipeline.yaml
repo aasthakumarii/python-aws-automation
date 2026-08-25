@@ -53,3 +53,136 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+
+  pipeline-summary:
+    name: Pipeline Summary
+
+    if: always()
+
+    needs:
+      - unit-tests
+      - syntax-check
+      - docker-build
+      - deploy
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate pipeline summary
+        shell: bash
+        run: |
+          UNIT_RESULT="${{ needs.unit-tests.result }}"
+          SYNTAX_RESULT="${{ needs.syntax-check.result }}"
+          DOCKER_RESULT="${{ needs.docker-build.result }}"
+          DEPLOY_RESULT="${{ needs.deploy.result }}"
+
+          echo "# CI/CD Pipeline Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## Execution Information" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Repository | \`${{ github.repository }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Event | \`${{ github.event_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch / Ref | \`${{ github.ref }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Triggered by | \`${{ github.actor }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Stage Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Stage | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          format_result() {
+            case "$1" in
+              success)
+                echo "PASS"
+                ;;
+              failure)
+                echo "FAIL"
+                ;;
+              skipped)
+                echo "SKIPPED"
+                ;;
+              cancelled)
+                echo "CANCELLED"
+                ;;
+              *)
+                echo "$1"
+                ;;
+            esac
+          }
+
+          UNIT_DISPLAY=$(format_result "$UNIT_RESULT")
+          SYNTAX_DISPLAY=$(format_result "$SYNTAX_RESULT")
+          DOCKER_DISPLAY=$(format_result "$DOCKER_RESULT")
+          DEPLOY_DISPLAY=$(format_result "$DEPLOY_RESULT")
+
+          echo "| Unit Tests | $UNIT_DISPLAY |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Python Syntax | $SYNTAX_DISPLAY |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Docker Build | $DOCKER_DISPLAY |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deployment | $DEPLOY_DISPLAY |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Unit Test Statistics" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Count |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Total | ${{ needs.unit-tests.outputs.total || 'N/A' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Passed | ${{ needs.unit-tests.outputs.passed || 'N/A' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failed | ${{ needs.unit-tests.outputs.failed || 'N/A' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Skipped | ${{ needs.unit-tests.outputs.skipped || 'N/A' }} |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Failure Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          FAILURE_FOUND=false
+
+          if [ "$UNIT_RESULT" = "failure" ]; then
+            echo "- Unit tests failed. Review the **unit-test-logs-${{ github.run_id }}** artifact and the Unit Tests job summary." >> "$GITHUB_STEP_SUMMARY"
+            FAILURE_FOUND=true
+          fi
+
+          if [ "$SYNTAX_RESULT" = "failure" ]; then
+            echo "- Python syntax validation failed. Review the **python-syntax-logs-${{ github.run_id }}** artifact." >> "$GITHUB_STEP_SUMMARY"
+            FAILURE_FOUND=true
+          fi
+
+          if [ "$DOCKER_RESULT" = "failure" ]; then
+            echo "- Docker image build failed. Review the **docker-build-logs-${{ github.run_id }}** artifact." >> "$GITHUB_STEP_SUMMARY"
+            FAILURE_FOUND=true
+          fi
+
+          if [ "$DEPLOY_RESULT" = "failure" ]; then
+            echo "- AWS deployment failed. Review the **Deploy After Main Validation** job logs." >> "$GITHUB_STEP_SUMMARY"
+            FAILURE_FOUND=true
+          fi
+
+          if [ "$FAILURE_FOUND" = "false" ]; then
+            echo "No pipeline failures were detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Available Diagnostic Logs" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`unit-test-logs-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`python-syntax-logs-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`docker-build-logs-${{ github.run_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deployment details are available directly in the deployment job log." >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Overall Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$UNIT_RESULT" = "failure" ] || \
+             [ "$SYNTAX_RESULT" = "failure" ] || \
+             [ "$DOCKER_RESULT" = "failure" ] || \
+             [ "$DEPLOY_RESULT" = "failure" ]; then
+
+            echo "**PIPELINE FAILED**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**PIPELINE PASSED**" >> "$GITHUB_STEP_SUMMARY"
+          fi
