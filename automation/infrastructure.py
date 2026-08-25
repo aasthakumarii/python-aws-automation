@@ -341,6 +341,7 @@ systemctl enable docker
 systemctl start docker
 
 usermod -aG docker ubuntu
+pip3 install boto3
 """
 
     # IAM can take a few seconds to propagate to EC2.
