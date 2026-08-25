@@ -1,0 +1,37 @@
+name: Reusable - Python Syntax Check
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        required: false
+        type: string
+        default: "3.12"
+
+      source-paths:
+        description: Space-separated Python source directories
+        required: false
+        type: string
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-check:
+    name: compileall
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Compile Python source
+        shell: bash
+        run: |
+          python -m compileall -q ${{ inputs.source-paths }}

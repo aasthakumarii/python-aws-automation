@@ -1,42 +1,34 @@
-name: Deploy Python Application
+name: Reusable - Deploy Python Application
 
 on:
-  push:
-    branches:
-      - main
+  workflow_call:
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      EC2_SSH_KEY:
+        required: true
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
+    name: deploy-to-aws
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------
-      # Checkout code
-      # -----------------------------
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # -----------------------------
-      # Setup Python
-      # -----------------------------
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # -----------------------------
-      # Install Boto3
-      # -----------------------------
-
       - name: Install automation dependencies
-        run: |
-          pip install -r automation/requirements.txt
-
-      # -----------------------------
-      # Configure AWS
-      # -----------------------------
+        run: pip install -r automation/requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -45,30 +37,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      # -----------------------------
-      # Create infrastructure
-      # -----------------------------
-
       - name: Setup AWS infrastructure
-        run: |
-          python automation/infrastructure.py setup
-
-      # -----------------------------
-      # Get EC2 public IP
-      # -----------------------------
+        run: python automation/infrastructure.py setup
 
       - name: Get EC2 IP
         id: ec2
+        shell: bash
         run: |
           IP=$(python automation/infrastructure.py ip)
-
           echo "EC2 IP: $IP"
-
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
-
-      # -----------------------------
-      # Deploy application
-      # -----------------------------
 
       - name: Deploy application to EC2
         uses: appleboy/ssh-action@v1.2.2
@@ -76,8 +54,8 @@ jobs:
           host: ${{ steps.ec2.outputs.ip }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-
           script: |
+            set -e
 
             echo "Waiting for Docker installation..."
 
@@ -101,43 +79,24 @@ jobs:
 
             cd python-aws-automation
 
-            git pull origin main
-
-            # --------------------------------
-            # Prepare directories
-            # --------------------------------
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
 
             mkdir -p /home/ubuntu/python-aws-automation/app/logs
-
-            # --------------------------------
-            # Stop old container
-            # --------------------------------
 
             sudo docker stop python-app || true
             sudo docker rm python-app || true
 
-            # --------------------------------
-            # Build application
-            # --------------------------------
-
             sudo docker build \
               -t python-automation-app \
               ./app
-
-            # --------------------------------
-            # Run application
-            # --------------------------------
 
             sudo docker run -d \
               --name python-app \
               -p 5000:5000 \
               -v /home/ubuntu/python-aws-automation/app/logs:/app/logs \
               python-automation-app
-
-            # --------------------------------
-            # Configure cron
-            # 10:00 AM IST = 04:30 UTC
-            # --------------------------------
 
             echo "Configuring daily 10 AM IST log upload..."
 
@@ -147,21 +106,13 @@ jobs:
             echo "Cron configured:"
             crontab -l
 
-            # --------------------------------
-            # Test application
-            # --------------------------------
-
             echo "Checking container..."
 
             sleep 5
 
             sudo docker ps
 
-            curl http://localhost:5000/health
-
-            # --------------------------------
-            # Run first log upload automatically
-            # --------------------------------
+            curl --fail http://localhost:5000/health
 
             echo "Running initial log upload..."
 
