@@ -1,0 +1,35 @@
+name: Reusable - Docker Build
+
+on:
+  workflow_call:
+    inputs:
+      docker-context:
+        description: Docker build context in the caller repository
+        required: false
+        type: string
+        default: "app"
+
+      image-name:
+        description: Local CI image name
+        required: false
+        type: string
+        default: "python-automation-ci"
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        shell: bash
+        run: |
+          docker build \
+            -t "${{ inputs.image-name }}:${GITHUB_SHA}" \
+            "${{ inputs.docker-context }}"
