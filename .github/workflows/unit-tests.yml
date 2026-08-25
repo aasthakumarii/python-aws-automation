@@ -21,6 +21,27 @@ on:
         type: string
         default: "tests"
 
+    outputs:
+      status:
+        description: Unit test result
+        value: ${{ jobs.unit-tests.outputs.status }}
+
+      total:
+        description: Total number of tests
+        value: ${{ jobs.unit-tests.outputs.total }}
+
+      passed:
+        description: Number of passed tests
+        value: ${{ jobs.unit-tests.outputs.passed }}
+
+      failed:
+        description: Number of failed tests
+        value: ${{ jobs.unit-tests.outputs.failed }}
+
+      skipped:
+        description: Number of skipped tests
+        value: ${{ jobs.unit-tests.outputs.skipped }}
+
 permissions:
   contents: read
 
@@ -28,6 +49,13 @@ jobs:
   unit-tests:
     name: pytest
     runs-on: ubuntu-latest
+
+    outputs:
+      status: ${{ steps.test-result.outputs.status }}
+      total: ${{ steps.test-report.outputs.total }}
+      passed: ${{ steps.test-report.outputs.passed }}
+      failed: ${{ steps.test-report.outputs.failed }}
+      skipped: ${{ steps.test-report.outputs.skipped }}
 
     env:
       AWS_EC2_METADATA_DISABLED: "true"
@@ -55,7 +83,154 @@ jobs:
 
           python -m pip install "pytest>=8,<9"
 
-      - name: Run unit tests
+      - name: Create report directory
         shell: bash
         run: |
-          python -m pytest "${{ inputs.test-path }}" -v
+          mkdir -p reports
+
+      - name: Run unit tests
+        id: pytest
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+
+          python -m pytest "${{ inputs.test-path }}" \
+            -v \
+            --tb=short \
+            --junitxml=reports/pytest.xml \
+            2>&1 | tee reports/pytest.log
+
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+          echo "exit_code=$TEST_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          exit 0
+
+      - name: Parse test report
+        id: test-report
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("reports/pytest.xml")
+
+          total = 0
+          failures = 0
+          errors = 0
+          skipped = 0
+
+          if report.exists():
+              root = ET.parse(report).getroot()
+
+              if root.tag == "testsuites":
+                  suites = list(root)
+              else:
+                  suites = [root]
+
+              for suite in suites:
+                  total += int(suite.attrib.get("tests", 0))
+                  failures += int(suite.attrib.get("failures", 0))
+                  errors += int(suite.attrib.get("errors", 0))
+                  skipped += int(suite.attrib.get("skipped", 0))
+
+          failed = failures + errors
+          passed = max(total - failed - skipped, 0)
+
+          output_file = os.environ["GITHUB_OUTPUT"]
+
+          with open(output_file, "a", encoding="utf-8") as output:
+              output.write(f"total={total}\n")
+              output.write(f"passed={passed}\n")
+              output.write(f"failed={failed}\n")
+              output.write(f"skipped={skipped}\n")
+
+          summary = Path("reports/unit-test-summary.md")
+
+          summary.write_text(
+              "\n".join(
+                  [
+                      "# Unit Test Summary",
+                      "",
+                      f"- Total: {total}",
+                      f"- Passed: {passed}",
+                      f"- Failed: {failed}",
+                      f"- Skipped: {skipped}",
+                  ]
+              ),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Determine unit test status
+        id: test-result
+        if: always()
+        shell: bash
+        run: |
+          EXIT_CODE="${{ steps.pytest.outputs.exit_code }}"
+
+          if [ -z "$EXIT_CODE" ]; then
+            EXIT_CODE=1
+          fi
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write unit test job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Unit Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ steps.test-result.outputs.status }}" = "success" ]; then
+            echo "**Status:** PASS" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Status:** FAIL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Count |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Total | ${{ steps.test-report.outputs.total }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Passed | ${{ steps.test-report.outputs.passed }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failed | ${{ steps.test-report.outputs.failed }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Skipped | ${{ steps.test-report.outputs.skipped }} |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ steps.test-result.outputs.status }}" = "failure" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Failure output" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 40 reports/pytest.log >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload unit test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs-${{ github.run_id }}
+          path: |
+            reports/pytest.log
+            reports/pytest.xml
+            reports/unit-test-summary.md
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail job when tests failed
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.test-result.outputs.status }}" != "success" ]; then
+            echo "Unit tests failed."
+            exit 1
+          fi
+
+          echo "Unit tests passed."

@@ -45,21 +45,26 @@ jobs:
         shell: bash
         run: |
           IP=$(python automation/infrastructure.py ip)
+
           echo "EC2 IP: $IP"
+
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
 
       - name: Deploy application to EC2
+        id: deploy-app
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ steps.ec2.outputs.ip }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
             set -e
 
             echo "Waiting for Docker installation..."
 
             for i in {1..30}; do
+
               if sudo docker --version >/dev/null 2>&1; then
                 echo "Docker is available."
                 break
@@ -67,6 +72,7 @@ jobs:
 
               echo "Docker not ready. Waiting 10 seconds..."
               sleep 10
+
             done
 
             sudo docker --version
@@ -123,3 +129,20 @@ jobs:
             cat /home/ubuntu/python-aws-automation/app/logs/upload.log
 
             echo "Application deployed successfully"
+
+      - name: Write deployment summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Deployment Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "**Status:** PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "AWS infrastructure and application deployment completed successfully." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Status:** FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Deployment failed. Open the failed deployment step above for the complete error log." >> "$GITHUB_STEP_SUMMARY"
+          fi

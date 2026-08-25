@@ -14,6 +14,11 @@ on:
         type: string
         default: "."
 
+    outputs:
+      status:
+        description: Python syntax check result
+        value: ${{ jobs.syntax-check.outputs.status }}
+
 permissions:
   contents: read
 
@@ -21,6 +26,9 @@ jobs:
   syntax-check:
     name: compileall
     runs-on: ubuntu-latest
+
+    outputs:
+      status: ${{ steps.syntax-result.outputs.status }}
 
     steps:
       - name: Checkout caller repository
@@ -31,7 +39,81 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
 
-      - name: Compile Python source
+      - name: Create report directory
         shell: bash
         run: |
-          python -m compileall -q ${{ inputs.source-paths }}
+          mkdir -p reports
+
+      - name: Compile Python source
+        id: compile
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+
+          python -m compileall \
+            ${{ inputs.source-paths }} \
+            2>&1 | tee reports/python-syntax.log
+
+          SYNTAX_EXIT_CODE=${PIPESTATUS[0]}
+
+          echo "exit_code=$SYNTAX_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          exit 0
+
+      - name: Determine syntax status
+        id: syntax-result
+        if: always()
+        shell: bash
+        run: |
+          EXIT_CODE="${{ steps.compile.outputs.exit_code }}"
+
+          if [ -z "$EXIT_CODE" ]; then
+            EXIT_CODE=1
+          fi
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write syntax job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Python Syntax Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ steps.syntax-result.outputs.status }}" = "success" ]; then
+            echo "**Status:** PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "All configured Python source paths compiled successfully." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Status:** FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Syntax error output" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 40 reports/python-syntax.log >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload syntax logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-syntax-logs-${{ github.run_id }}
+          path: reports/python-syntax.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail job when syntax check failed
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.syntax-result.outputs.status }}" != "success" ]; then
+            echo "Python syntax validation failed."
+            exit 1
+          fi
+
+          echo "Python syntax validation passed."
