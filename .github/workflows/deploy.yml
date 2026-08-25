@@ -10,14 +10,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       # -----------------------------
       # Checkout code
       # -----------------------------
 
       - name: Checkout repository
         uses: actions/checkout@v4
-
 
       # -----------------------------
       # Setup Python
@@ -28,7 +26,6 @@ jobs:
         with:
           python-version: "3.12"
 
-
       # -----------------------------
       # Install Boto3
       # -----------------------------
@@ -36,7 +33,6 @@ jobs:
       - name: Install automation dependencies
         run: |
           pip install -r automation/requirements.txt
-
 
       # -----------------------------
       # Configure AWS
@@ -49,7 +45,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-
       # -----------------------------
       # Create infrastructure
       # -----------------------------
@@ -57,7 +52,6 @@ jobs:
       - name: Setup AWS infrastructure
         run: |
           python automation/infrastructure.py setup
-
 
       # -----------------------------
       # Get EC2 public IP
@@ -71,7 +65,6 @@ jobs:
           echo "EC2 IP: $IP"
 
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
-
 
       # -----------------------------
       # Deploy application
