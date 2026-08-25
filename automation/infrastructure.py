@@ -333,15 +333,14 @@ def create_ec2(security_group_id):
     print("Creating EC2 instance...")
 
     user_data = """#!/bin/bash
-
 apt-get update -y
-apt-get install -y docker.io git
+
+apt-get install -y docker.io git python3-boto3
 
 systemctl enable docker
 systemctl start docker
 
 usermod -aG docker ubuntu
-pip3 install boto3
 """
 
     # IAM can take a few seconds to propagate to EC2.

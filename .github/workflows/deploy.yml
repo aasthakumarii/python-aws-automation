@@ -134,6 +134,13 @@ jobs:
               python-automation-app
 
             echo "Checking container..."
+            echo "Configuring 10 AM IST log upload..."
+
+            (crontab -l 2>/dev/null | grep -v "automation/upload_logs.py"; \
+            echo "30 4 * * * cd /home/ubuntu/python-aws-automation && /usr/bin/python3 automation/upload_logs.py >> /home/ubuntu/python-aws-automation/app/logs/upload.log 2>&1") | crontab -
+
+            echo "Cron configured:"
+            crontab -l
 
             sleep 5
 
