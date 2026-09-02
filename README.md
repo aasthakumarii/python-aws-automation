@@ -50,7 +50,7 @@ https://github.com/aasthakumarii/python-aws-automation
 ---
 
 ## Architecture
-
+![Arhitecture](Architecture.png)
 ```text
 Developer
    |
